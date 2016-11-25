@@ -1,0 +1,15 @@
+{
+    "input": {
+        "title": "Query",
+        "type": "object",
+		"required": ["term"],
+        "properties": {
+            "term": {
+                "description": "JSON query"
+            },
+			"runWrite": {
+				"type": "boolean"
+			}
+        }
+    }
+}
