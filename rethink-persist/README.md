@@ -44,4 +44,4 @@ Run the service:
 
 ## Use client for consuming service ##
 
-Service can be consumed directly, but helper functions are provided in client package, see [client/client.go](github.com/nayarsystems/nexus-services/blob/master/rethink-persist/client/client.go) for package definition and an example on [client/example/example.go](github.com/nayarsystems/nexus-services/blob/master/rethink-persist/client/example/example.go).
+Service can be consumed directly, but helper functions are provided in client package, see [client/client.go](http://github.com/nayarsystems/nexus-services/blob/master/rethink-persist/client/client.go) for package definition and an example on [client/example/example.go](http://github.com/nayarsystems/nexus-services/blob/master/rethink-persist/client/example/example.go).
