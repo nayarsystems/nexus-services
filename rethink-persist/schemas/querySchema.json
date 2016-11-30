@@ -1,15 +1,20 @@
 {
-    "input": {
-        "title": "Query",
-        "type": "object",
+	"input": {
+		"title": "Query",
+		"type": "object",
 		"required": ["term"],
-        "properties": {
-            "term": {
-                "description": "JSON query"
-            },
-			"runWrite": {
-				"type": "boolean"
+		"properties": {
+			"term": {
+				"description": "JSON query"
+			},
+			"pipeId": {
+				"description": "Nexus pipeId to stream results",
+				"type": "string"
+			},
+			"keepalive": {
+				"description": "Keepalive to keep the pipe open",
+				"type": "number"
 			}
-        }
-    }
+		}
+	}
 }

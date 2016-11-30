@@ -1,3 +1,5 @@
+# rethink-persist #
+
 ## Description ##
 
 Rethink-persist is a service that allows to execute rethinkDB queries restricted to a database on a cluster.
@@ -8,7 +10,7 @@ It can stream results from a query through a pipe (mandatory when the query is a
 
 ### Create some folders for persistence ###
 
-	mkdir /opt/docker/nexus /opt/docker/nexus/certs /opt/docker/rth`
+	mkdir /opt/docker/nexus /opt/docker/nexus/certs /opt/docker/rth
 
 ### Place some dummy certs ###
 
