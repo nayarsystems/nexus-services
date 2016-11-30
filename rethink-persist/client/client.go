@@ -1,80 +1,149 @@
-package main
+package client
 
 import (
-	"log"
+	"fmt"
+	"sync"
 	"time"
 
 	"github.com/jaracil/ei"
-	"github.com/nayarsystems/nxgo"
+	nexus "github.com/nayarsystems/nxgo/nxcore"
 	r "gopkg.in/dancannon/gorethink.v2"
+	"gopkg.in/dancannon/gorethink.v2/encoding"
 )
 
-type RthTerm struct {
-	term      r.Term
-	builtTerm interface{}
+const (
+	PipeMsgError     = -1
+	PipeMsgData      = 0
+	PipeMsgKeepalive = 1
+)
+
+func Term(term r.Term) interface{} {
+	t, err := term.Build()
+	if err != nil {
+		return nil
+	}
+	return t
 }
 
-func main() {
-	// Connect to nexus
-	nxconn, err := nxgo.Dial("tcp://localhost:11717", nil)
+func WriteResponse(res interface{}) *r.WriteResponse {
+	var wres r.WriteResponse
+	err := encoding.Decode(&wres, res)
 	if err != nil {
-		log.Fatalf("Error on dial: %s\n", err.Error())
+		return nil
 	}
-	_, err = nxconn.Login("root", "root")
-	if err != nil {
-		log.Fatalf("Error on login: %s\n", err.Error())
-	}
+	return &wres
+}
 
-	// Create rethinkDB terms
-	terms := map[string]*RthTerm{}
-	terms["tableCreate"], err = NewRthTerm(r.TableCreate("test"))
-	if err != nil {
-		log.Fatalf("Error building tableCreate term: %s\n", err.Error())
-	}
-	terms["read"], err = NewRthTerm(r.Table("test"))
-	if err != nil {
-		log.Fatalf("Error building read term: %s\n", err.Error())
-	}
-	terms["insert"], err = NewRthTerm(r.Table("test").Insert(ei.M{"hello": "world"}))
-	if err != nil {
-		log.Fatalf("Error building insert term: %s\n", err.Error())
-	}
-	terms["update"], err = NewRthTerm(r.Table("test").Filter(r.Row.Field("hello").Eq("world")).Update(ei.M{"hello": "nayar"}))
-	if err != nil {
-		log.Fatalf("Error building update term: %s\n", err.Error())
-	}
-	terms["delete"], err = NewRthTerm(r.Table("test").Filter(r.Row.Field("hello").Eq("nayar")).Delete())
-	if err != nil {
-		log.Fatalf("Error building delete term: %s\n", err.Error())
-	}
-	terms["tableDelete"], err = NewRthTerm(r.TableDrop("test"))
-	if err != nil {
-		log.Fatalf("Error building tableDelete term: %s\n", err.Error())
-	}
+type StreamedResponse struct {
+	lock   *sync.Mutex
+	pipeRx *nexus.Pipe
+	ch     chan interface{}
+	closed bool
+	err    error
+}
 
-	// Execute some terms
-	method := "test.rethink-persist.query"
-	timeout := time.Second * 5
-	for _, tn := range []string{"tableCreate", "read", "insert", "read", "update", "read", "delete", "read", "tableDelete"} {
-		term := terms[tn]
-		log.Printf("Executing term %s: %s => %#v\n", tn, term.term.String(), term.builtTerm)
+func StreamResponse(pipeRx *nexus.Pipe, keepalive int) *StreamedResponse {
+	sr := &StreamedResponse{
+		lock:   &sync.Mutex{},
+		pipeRx: pipeRx,
+		ch:     make(chan interface{}),
+		closed: false,
+		err:    nil,
+	}
+	go func(sr *StreamedResponse) {
+		defer pipeRx.Close()
+		defer close(sr.ch)
 
-		res, err := nxconn.TaskPush(method, ei.M{"term": term.builtTerm}, timeout)
-		if err != nil {
-			log.Printf("Error executing term %s: %s\n", tn, err.Error())
-			return
+		msgCh := sr.pipeRx.Listen(nil)
+		keepalive += 1
+		keepaliveTimeout := time.After(time.Second * time.Duration(keepalive))
+		var expected int64 = 1
+
+		for {
+			select {
+			case msg, ok := <-msgCh:
+				if !ok {
+					sr.lock.Lock()
+					if !sr.closed {
+						sr.err = fmt.Errorf("Error reading from stream pipe: closed")
+					}
+					sr.closed = true
+					sr.lock.Unlock()
+					return
+				}
+				if msg.Count != expected {
+					sr.lock.Lock()
+					sr.err = fmt.Errorf("Error reading from stream pipe: %d drops", msg.Count-expected)
+					sr.closed = true
+					sr.lock.Unlock()
+					return
+				}
+				expected += 1
+				ty, err := ei.N(msg.Msg).M("type").Int()
+				if err == nil {
+					if ty == PipeMsgData {
+						data, err := ei.N(msg.Msg).M("data").Raw()
+						if err == nil {
+							sr.ch <- data
+						}
+					} else if ty == PipeMsgKeepalive {
+						keepaliveTimeout = time.After(time.Second * time.Duration(keepalive))
+					} else if ty == PipeMsgError {
+						errs, err := ei.N(msg.Msg).M("error").String()
+						if err == nil {
+							sr.lock.Lock()
+							sr.err = fmt.Errorf("Stream closed by other peer: %s", errs)
+							sr.closed = true
+							sr.lock.Unlock()
+							return
+						}
+					}
+				}
+			case <-keepaliveTimeout:
+				sr.lock.Lock()
+				sr.err = fmt.Errorf("Stream closed by keepalive")
+				sr.closed = true
+				sr.lock.Unlock()
+				return
+			}
+		}
+	}(sr)
+	return sr
+}
+
+func (sr *StreamedResponse) Ch() chan interface{} {
+	return sr.ch
+}
+
+func (sr *StreamedResponse) Next() (interface{}, error) {
+	el, ok := <-sr.ch
+	if !ok {
+		if err := sr.Err(); err != nil {
+			return nil, err
 		} else {
-			log.Printf("Executed term %s: %#v\n", tn, res)
+			return nil, fmt.Errorf("Stream closed locally")
 		}
 	}
-
+	return el, nil
 }
 
-func NewRthTerm(r r.Term) (*RthTerm, error) {
-	var err error
-	rthTerm := &RthTerm{r, nil}
-	if rthTerm.builtTerm, err = rthTerm.term.Build(); err != nil {
-		return nil, err
+func (sr *StreamedResponse) Closed() bool {
+	sr.lock.Lock()
+	defer sr.lock.Unlock()
+	return sr.closed
+}
+
+func (sr *StreamedResponse) Err() error {
+	sr.lock.Lock()
+	defer sr.lock.Unlock()
+	return sr.err
+}
+
+func (sr *StreamedResponse) Close() {
+	sr.lock.Lock()
+	defer sr.lock.Unlock()
+	if !sr.closed {
+		sr.closed = true
+		sr.pipeRx.Close()
 	}
-	return rthTerm, nil
 }
