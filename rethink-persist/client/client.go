@@ -17,6 +17,7 @@ const (
 	PipeMsgKeepalive = 1
 )
 
+// Term prepares a gorethink Term to be sent to a rethink-persist service
 func Term(term r.Term) interface{} {
 	t, err := term.Build()
 	if err != nil {
@@ -25,6 +26,7 @@ func Term(term r.Term) interface{} {
 	return t
 }
 
+// Write response parses a write operation response into a gorethink WriteResponse
 func WriteResponse(res interface{}) *r.WriteResponse {
 	var wres r.WriteResponse
 	err := encoding.Decode(&wres, res)
@@ -34,91 +36,64 @@ func WriteResponse(res interface{}) *r.WriteResponse {
 	return &wres
 }
 
-type StreamedResponse struct {
-	lock   *sync.Mutex
-	pipeRx *nexus.Pipe
-	ch     chan interface{}
-	closed bool
-	err    error
+// StreamedTerm manages reading results from a rethink query in a streamed way (with a nexus pipe)
+// Must be used with changefeeds. Can be used with normal queries to receive results in a stream.
+type StreamedTerm struct {
+	lock      *sync.Mutex
+	term      r.Term
+	pipeRx    *nexus.Pipe
+	keepalive int64
+	ch        chan interface{}
+	started   bool
+	closed    bool
+	err       error
 }
 
-func StreamResponse(pipeRx *nexus.Pipe, keepalive int) *StreamedResponse {
-	sr := &StreamedResponse{
-		lock:   &sync.Mutex{},
-		pipeRx: pipeRx,
-		ch:     make(chan interface{}),
-		closed: false,
-		err:    nil,
+// StreamedTermOpts are the options for reading from a StreamedTerm
+type StreamedTermOpts struct {
+	Keepalive int64 //
+	PipeLen   int
+}
+
+func NewStreamedTerm(nxconn *nexus.NexusConn, term r.Term, opts ...*StreamedTermOpts) (*StreamedTerm, error) {
+	var keepalive int64 = 30
+	var pipeLen int = 10000
+	if len(opts) > 0 {
+		keepalive = opts[0].Keepalive
+		pipeLen = opts[0].PipeLen
 	}
-	go func(sr *StreamedResponse) {
-		defer pipeRx.Close()
-		defer close(sr.ch)
+	pipeRx, err := nxconn.PipeCreate(&nexus.PipeOpts{Length: pipeLen})
+	if err != nil {
+		return nil, fmt.Errorf("Error creating receive pipe")
+	}
+	st := &StreamedTerm{
+		lock:      &sync.Mutex{},
+		term:      term,
+		pipeRx:    pipeRx,
+		keepalive: keepalive,
+		ch:        make(chan interface{}),
+		started:   false,
+		closed:    false,
+		err:       nil,
+	}
 
-		msgCh := sr.pipeRx.Listen(nil)
-		keepalive += 1
-		keepaliveTimeout := time.After(time.Second * time.Duration(keepalive))
-		var expected int64 = 1
-
-		for {
-			select {
-			case msg, ok := <-msgCh:
-				if !ok {
-					sr.lock.Lock()
-					if !sr.closed {
-						sr.err = fmt.Errorf("Error reading from stream pipe: closed")
-					}
-					sr.closed = true
-					sr.lock.Unlock()
-					return
-				}
-				if msg.Count != expected {
-					sr.lock.Lock()
-					sr.err = fmt.Errorf("Error reading from stream pipe: %d drops", msg.Count-expected)
-					sr.closed = true
-					sr.lock.Unlock()
-					return
-				}
-				expected += 1
-				ty, err := ei.N(msg.Msg).M("type").Int()
-				if err == nil {
-					if ty == PipeMsgData {
-						data, err := ei.N(msg.Msg).M("data").Raw()
-						if err == nil {
-							sr.ch <- data
-						}
-					} else if ty == PipeMsgKeepalive {
-						keepaliveTimeout = time.After(time.Second * time.Duration(keepalive))
-					} else if ty == PipeMsgError {
-						errs, err := ei.N(msg.Msg).M("error").String()
-						if err == nil {
-							sr.lock.Lock()
-							sr.err = fmt.Errorf("Stream closed by other peer: %s", errs)
-							sr.closed = true
-							sr.lock.Unlock()
-							return
-						}
-					}
-				}
-			case <-keepaliveTimeout:
-				sr.lock.Lock()
-				sr.err = fmt.Errorf("Stream closed by keepalive")
-				sr.closed = true
-				sr.lock.Unlock()
-				return
-			}
-		}
-	}(sr)
-	return sr
+	return st, nil
 }
 
-func (sr *StreamedResponse) Ch() chan interface{} {
-	return sr.ch
+func (st *StreamedTerm) Params() map[string]interface{} {
+	return ei.M{"term": Term(st.term), "pipeId": st.pipeRx.Id(), "keepalive": st.keepalive}
 }
 
-func (sr *StreamedResponse) Next() (interface{}, error) {
-	el, ok := <-sr.ch
+func (st *StreamedTerm) Ch() chan interface{} {
+	st.start()
+	return st.ch
+}
+
+func (st *StreamedTerm) Next() (interface{}, error) {
+	st.start()
+	el, ok := <-st.ch
 	if !ok {
-		if err := sr.Err(); err != nil {
+		if err := st.Err(); err != nil {
 			return nil, err
 		} else {
 			return nil, fmt.Errorf("Stream closed locally")
@@ -127,23 +102,92 @@ func (sr *StreamedResponse) Next() (interface{}, error) {
 	return el, nil
 }
 
-func (sr *StreamedResponse) Closed() bool {
-	sr.lock.Lock()
-	defer sr.lock.Unlock()
-	return sr.closed
+func (st *StreamedTerm) Closed() bool {
+	st.lock.Lock()
+	defer st.lock.Unlock()
+	return st.closed
 }
 
-func (sr *StreamedResponse) Err() error {
-	sr.lock.Lock()
-	defer sr.lock.Unlock()
-	return sr.err
+func (st *StreamedTerm) Err() error {
+	st.lock.Lock()
+	defer st.lock.Unlock()
+	return st.err
 }
 
-func (sr *StreamedResponse) Close() {
-	sr.lock.Lock()
-	defer sr.lock.Unlock()
-	if !sr.closed {
-		sr.closed = true
-		sr.pipeRx.Close()
+func (st *StreamedTerm) Close() {
+	st.lock.Lock()
+	defer st.lock.Unlock()
+	if !st.closed {
+		st.closed = true
+		st.pipeRx.Close()
 	}
+}
+
+func (st *StreamedTerm) start() {
+	st.lock.Lock()
+	if st.started && !st.closed {
+		st.lock.Unlock()
+		return
+	}
+	go func() {
+		defer st.pipeRx.Close()
+		defer close(st.ch)
+
+		msgCh := st.pipeRx.Listen(nil)
+		st.keepalive += 1
+		keepaliveTimeout := time.After(time.Second * time.Duration(st.keepalive))
+		var expected int64 = 1
+		st.started = true
+		st.lock.Unlock()
+
+		for {
+			select {
+			case msg, ok := <-msgCh:
+				if !ok {
+					st.lock.Lock()
+					if !st.closed {
+						st.err = fmt.Errorf("Error reading from stream pipe: closed")
+					}
+					st.closed = true
+					st.lock.Unlock()
+					return
+				}
+				if msg.Count != expected {
+					st.lock.Lock()
+					st.err = fmt.Errorf("Error reading from stream pipe: %d drops", msg.Count-expected)
+					st.closed = true
+					st.lock.Unlock()
+					return
+				}
+				expected += 1
+				ty, err := ei.N(msg.Msg).M("type").Int()
+				if err == nil {
+					if ty == PipeMsgData {
+						data, err := ei.N(msg.Msg).M("data").Raw()
+						if err == nil {
+							st.ch <- data
+						}
+						keepaliveTimeout = time.After(time.Second * time.Duration(st.keepalive))
+					} else if ty == PipeMsgKeepalive {
+						keepaliveTimeout = time.After(time.Second * time.Duration(st.keepalive))
+					} else if ty == PipeMsgError {
+						errs, err := ei.N(msg.Msg).M("error").String()
+						if err == nil {
+							st.lock.Lock()
+							st.err = fmt.Errorf("Stream closed by other peer: %s", errs)
+							st.closed = true
+							st.lock.Unlock()
+							return
+						}
+					}
+				}
+			case <-keepaliveTimeout:
+				st.lock.Lock()
+				st.err = fmt.Errorf("Stream closed by keepalive")
+				st.closed = true
+				st.lock.Unlock()
+				return
+			}
+		}
+	}()
 }
