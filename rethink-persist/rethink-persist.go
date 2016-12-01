@@ -82,7 +82,7 @@ func main() {
 			// Get term param and check
 			builtTerm, err := ei.N(task.Params).M("term").Raw()
 			if err != nil {
-				return nil, nxsugar.NewJsonRpcErr(nxsugar.ErrInvalidParams, "Missing term", nil)
+				return nil, &nxsugar.JsonRpcErr{nxsugar.ErrInvalidParams, "Missing term", nil}
 			}
 			termSlice := ei.N(builtTerm).SliceZ()
 			termErr, isChangeFeed := s.checkTermSlice(termSlice)
@@ -93,7 +93,7 @@ func main() {
 			// Get pipeId param and check
 			pipeId := ei.N(task.Params).M("pipeId").StringZ()
 			if isChangeFeed && pipeId == "" {
-				return nil, nxsugar.NewJsonRpcErr(nxsugar.ErrInvalidParams, "Missing pipeId for a changefeed term", nil)
+				return nil, &nxsugar.JsonRpcErr{nxsugar.ErrInvalidParams, "Missing pipeId for a changefeed term", nil}
 			}
 
 			// Get keepalive param
@@ -109,20 +109,20 @@ func main() {
 			rq, _ := json.Marshal(builtTerm)
 			cur, err := r.RawQuery(rq).Run(s.db)
 			if err != nil {
-				return nil, nxsugar.NewJsonRpcErr(ErrRunningQuery, fmt.Sprintf("Error running query: %s", err.Error()), err)
+				return nil, &nxsugar.JsonRpcErr{ErrRunningQuery, fmt.Sprintf("Error running query: %s", err.Error()), err}
 			}
 
 			// Get results from cursor
 			if pipeId == "" {
 				if ret, err := cur.Interface(); err != nil {
-					return nil, nxsugar.NewJsonRpcErr(ErrOnCursor, fmt.Sprintf("Error on cursor: %s", err.Error()), err)
+					return nil, &nxsugar.JsonRpcErr{ErrOnCursor, fmt.Sprintf("Error on cursor: %s", err.Error()), err}
 				} else {
 					return ret, nil
 				}
 			} else {
 				pipeTx, err := svc.GetConn().PipeOpen(pipeId)
 				if err != nil {
-					return nil, nxsugar.NewJsonRpcErr(ErrOnPipe, fmt.Sprintf("Error opening pipe: %s", err.Error()), nil)
+					return nil, &nxsugar.JsonRpcErr{ErrOnPipe, fmt.Sprintf("Error opening pipe: %s", err.Error()), nil}
 				}
 				go func(cur *r.Cursor, pipeTx *nexus.Pipe) {
 					defer cur.Close()
@@ -201,7 +201,7 @@ func (s *PersistService) checkTermSlice(t []interface{}) (*nxsugar.JsonRpcErr, b
 			if p.Term_TermType(ty) == p.Term_DB && len(t) >= 2 { // Check DB (only access self db)
 				if args, err := ei.N(t[1]).Slice(); err == nil && len(args) >= 1 {
 					if dbname, err := ei.N(args[0]).String(); err == nil && dbname != s.rethinkDb {
-						return nxsugar.NewJsonRpcErr(ErrInvalidDB, fmt.Sprintf("Invalid access to DB `%s`, allowed DB is `%s`", dbname, s.rethinkDb), nil), isChangeFeed
+						return &nxsugar.JsonRpcErr{ErrInvalidDB, fmt.Sprintf("Invalid access to DB `%s`, allowed DB is `%s`", dbname, s.rethinkDb), nil}, isChangeFeed
 					}
 				}
 			} else if p.Term_TermType(ty) == p.Term_CHANGES { // Indicate it's a changefeed request
