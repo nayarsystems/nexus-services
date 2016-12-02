@@ -90,10 +90,10 @@ func main() {
 				return nil, termErr
 			}
 
-			// Get pipeId param and check
-			pipeId := ei.N(task.Params).M("pipeId").StringZ()
+			// Get pipeid param and check
+			pipeId := ei.N(task.Params).M("pipeid").StringZ()
 			if isChangeFeed && pipeId == "" {
-				return nil, &nxsugar.JsonRpcErr{nxsugar.ErrInvalidParams, "Missing pipeId for a changefeed term", nil}
+				return nil, &nxsugar.JsonRpcErr{nxsugar.ErrInvalidParams, "Missing pipeid for a changefeed term", nil}
 			}
 
 			// Get keepalive param

@@ -81,7 +81,7 @@ func NewStreamedTerm(nxconn *nexus.NexusConn, term r.Term, opts ...*StreamedTerm
 }
 
 func (st *StreamedTerm) Params() map[string]interface{} {
-	return ei.M{"term": Term(st.term), "pipeId": st.pipeRx.Id(), "keepalive": st.keepalive}
+	return ei.M{"term": Term(st.term), "pipeid": st.pipeRx.Id(), "keepalive": st.keepalive}
 }
 
 func (st *StreamedTerm) Ch() chan interface{} {
