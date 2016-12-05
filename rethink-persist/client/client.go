@@ -26,12 +26,26 @@ func Term(term r.Term) interface{} {
 	return t
 }
 
+// ResIsNil returns wether a result is nil (nil or slice with one nil value)
+func ResIsNil(res interface{}) bool {
+	if res == nil {
+		return true
+	}
+	if sl, err := ei.N(res).Slice(); err == nil {
+		if len(sl) > 0 {
+			return sl[0] == nil
+		}
+		return true
+	}
+	return false
+}
+
 // Write response parses a write operation response into a gorethink WriteResponse
 func WriteResponse(res interface{}) *r.WriteResponse {
-	var wres r.WriteResponse
+	wres := r.WriteResponse{}
 	err := encoding.Decode(&wres, res)
 	if err != nil {
-		return nil
+		return &wres
 	}
 	return &wres
 }
