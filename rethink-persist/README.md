@@ -10,12 +10,14 @@ It can stream results from a query through a pipe (mandatory when the query is a
 
 ### Create some folders for persistence ###
 
-	mkdir /opt/docker/nexus /opt/docker/nexus/certs /opt/docker/rth
+	mkdir /opt/docker /opt/docker/nexus /opt/docker/nexus/certs /opt/docker/rth
+	
+The user running docker must have rw permissions on those directories.
 
 ### Place some dummy certs ###
 
 	cd /opt/docker/nexus/certs
-	openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 3650
+	openssl req -x509 -newkey rsa:4096 -keyout nexus.key -out nexus.crt -days 3650 -nodes
 
 ### Launch rethink for service ###
 
