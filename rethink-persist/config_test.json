@@ -16,7 +16,7 @@
 			"rethink-host": "localhost:38015",
 			"rethink-db": "persist",
 			"reset": false,
-            "schemesPath": "/etc/persist/schemas/querySchema.json"
+            "schemesPath": "schemas/querySchema.json"
         }
     }
 }
