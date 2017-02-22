@@ -77,7 +77,7 @@ func main() {
 	}
 
 	// Add methods
-	if err = s.AddMethodSchema("query", &nxsugar.Schema{FromFile: "schemas/querySchema.json"},
+	if err = s.AddMethodSchema("query", &nxsugar.Schema{FromFile: ei.N(config).M("services").M("rethink-persist").M("schemesPath").StringZ()},
 		func(task *nxsugar.Task) (interface{}, *nxsugar.JsonRpcErr) {
 			// Get term param and check
 			builtTerm, err := ei.N(task.Params).M("term").Raw()
