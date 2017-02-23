@@ -107,6 +107,27 @@ func main() {
 		log.Printf("Read: %v\n", res)
 	}
 
+	// Insert one
+	if res, err := nxconn.TaskPush(method, ei.M{"term": nxr.Term(r.Table("test").Insert(ei.M{"id": "jijiji", "data": "jejeje"}))}, timeout); err != nil {
+		log.Fatalf("Error insert: %s\n", err.Error())
+	} else {
+		log.Printf("Insert WriteResponse: %#v\n", nxr.WriteResponse(res))
+	}
+
+	// Get one row
+	if res, err := nxconn.TaskPush(method, ei.M{"term": nxr.Term(r.Table("test").Get("jijiji"))}, timeout); err != nil {
+		log.Fatal("Error get: %s\n", err.Error())
+	} else {
+		log.Printf("Get: %v\n", res)
+	}
+
+	// Get empty row
+	if res, err := nxconn.TaskPush(method, ei.M{"term": nxr.Term(r.Table("test").Get("jijijijijiji"))}, timeout); err != nil {
+		log.Fatal("Error get: %s\n", err.Error())
+	} else {
+		log.Printf("Get: %v len(%d)\n", res, len(ei.N(res).SliceZ()))
+	}
+
 	// Delete
 	if res, err := nxconn.TaskPush(method, ei.M{"term": nxr.Term(del)}, timeout); err != nil {
 		log.Fatal("Error delete: %s\n", err.Error())

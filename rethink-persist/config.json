@@ -1,0 +1,22 @@
+{
+    "server": {
+        "url": "localhost:11717",
+        "user": "root",
+        "pass": "root",
+        "log-level": "debug"
+    },
+    "services": {
+        "rethink-persist": {
+            "path": "rethink.test-persist",
+            "description": "Provides persistence in nexus. Allows to interact with a rethinkDB database.",
+            "pulls": 20,
+            "pull-timeout": 1800,
+            "max-threads": 200,
+            "version": "0.0.1",
+            "rethink-host": "localhost:38015",
+            "rethink-db": "persist",
+            "reset": false,
+            "schemas-path": "schemas/"
+        }
+    }
+}
