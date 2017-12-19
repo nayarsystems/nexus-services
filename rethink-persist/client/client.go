@@ -7,8 +7,8 @@ import (
 
 	"github.com/jaracil/ei"
 	nexus "github.com/nayarsystems/nxgo/nxcore"
-	r "gopkg.in/dancannon/gorethink.v2"
-	"gopkg.in/dancannon/gorethink.v2/encoding"
+	r "gopkg.in/dancannon/gorethink.v3"
+	"gopkg.in/dancannon/gorethink.v3/encoding"
 )
 
 const (

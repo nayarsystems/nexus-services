@@ -9,8 +9,8 @@ import (
 	"github.com/jaracil/ei"
 	nexus "github.com/nayarsystems/nxgo/nxcore"
 	"github.com/nayarsystems/nxsugar-go"
-	r "gopkg.in/dancannon/gorethink.v2"
-	p "gopkg.in/dancannon/gorethink.v2/ql2"
+	r "gopkg.in/dancannon/gorethink.v3"
+	p "gopkg.in/dancannon/gorethink.v3/ql2"
 )
 
 const (

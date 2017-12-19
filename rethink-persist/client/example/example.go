@@ -9,7 +9,7 @@ import (
 	"github.com/jaracil/ei"
 	nxr "github.com/nayarsystems/nexus-services/rethink-persist/client"
 	"github.com/nayarsystems/nxgo"
-	r "gopkg.in/dancannon/gorethink.v2"
+	r "gopkg.in/dancannon/gorethink.v3"
 )
 
 var wg sync.WaitGroup = sync.WaitGroup{}
